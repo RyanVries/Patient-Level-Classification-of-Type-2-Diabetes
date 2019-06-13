@@ -338,7 +338,7 @@ def classifiers(dframe,predictions,algos,padding,normalize,method,certainty,basi
         elif validation==False and disable==False:
             kap,ks,F1,fs,auc,ast,PPV,Ps,NPV,Ns,sensi,sss,speci,sfs=cross_sc(clf,features,y_true,y_cert,certainty)    #compute cross-validation score
         elif disable==False and validation==True:
-            kap,ks,F1,fs,auc,ast,PPV,Ps,NPV,Ns,sensi,sss,speci,sfs=validation_score(clf,features,y_true,X_val,y_val,y_val_cert,certainty)  
+            kap,ks,F1,fs,auc,ast,PPV,Ps,NPV,Ns,sensi,sss,speci,sfs=validation_score(clf,features,y_true,X_val,y_val,y_val_cert,certainty,method,padding)  
         #add the scores to the list
         if disable==False:
             AUCs.append(auc)
@@ -500,9 +500,9 @@ class path():
     validation_pred='val_prediction_30.npy'
     validation_excel='labels_validationset.xlsx'
     
-save_bar=False   #option to save bar plots    options: True or False
+save_bar=True   #option to save bar plots    options: True or False
 normalize=True   #option to normalize features    options: True or False
-method='Both'  #method to use for data pre-processing    options: 'All' or 'Eyes' or 'Center' or 'Both'
+method='All'  #method to use for data pre-processing    options: 'All' or 'Eyes' or 'Center' or 'Both'
 padding='Zero'  #Padding method   options: 'Zero' or 'Average'
 certainty=True    #options: True or False
 visual=False   #visualze data distributions
