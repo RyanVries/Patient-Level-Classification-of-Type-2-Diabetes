@@ -166,20 +166,20 @@ def prepare_data(dframe,predictions,padding,normalize,method,certainty):
             ir=(part['Eye']=='Right')   #indexes of right eye
             iod=(part['ODorFoveaCentered']=='OD')   #indexes of OD center
             ifo=(part['ODorFoveaCentered']=='Fovea')   #indexes of Fovea center
-            OD_L=(il & iod)
-            FOV_L=(il % ifo)
-            OD_R=(ir % iod)
-            FOV_R=(ir & ifo)
-            means=[np.mean(np.mean(preds[OD_L,:],axis=1)),np.mean(np.mean(preds[FOV_L,:],axis=1)),np.mean(np.mean(preds[OD_R,:],axis=1)),np.mean(np.mean(preds[FOV_R,:],axis=1))]  #mean of OD and Fovea center
-            stands=[np.std(np.mean(preds[OD_L,:],axis=1)),np.std(np.mean(preds[FOV_L,:],axis=1)),np.std(np.mean(preds[OD_R,:],axis=1)),np.std(np.mean(preds[FOV_R,:],axis=1))]
+            OD_L=(il & iod) #OD centering - left eye
+            FOV_L=(il % ifo)   #Fovea Centering - Left eye
+            OD_R=(ir % iod)   #OD centering - Right eye
+            FOV_R=(ir & ifo)   #Fovea Centering - Right Eye
+            means=[np.mean(np.mean(preds[OD_L,:],axis=1)),np.mean(np.mean(preds[FOV_L,:],axis=1)),np.mean(np.mean(preds[OD_R,:],axis=1)),np.mean(np.mean(preds[FOV_R,:],axis=1))]  #mean features
+            stands=[np.std(np.mean(preds[OD_L,:],axis=1)),np.std(np.mean(preds[FOV_L,:],axis=1)),np.std(np.mean(preds[OD_R,:],axis=1)),np.std(np.mean(preds[FOV_R,:],axis=1))]   #std features
             if padding=='Zero':
-                means=np.where(np.isnan(means),0,means)
-                stands=np.where(np.isnan(stands),0,stands)
+                means=np.where(np.isnan(means),0,means)   #replace nan values with a 0
+                stands=np.where(np.isnan(stands),0,stands)  #replace nan values with a 0
                 
             elif padding=='Average':
-                nans=np.isnan(means)
-                means=np.where(np.isnan(means),np.mean(ma.masked_array(means,mask=nans)),means)
-                stands=np.where(np.isnan(stands),np.mean(ma.masked_array(stands,mask=nans)),stands)
+                nans=np.isnan(means)   #places which contain Nan values
+                means=np.where(np.isnan(means),np.mean(ma.masked_array(means,mask=nans)),means)   #replace Nan values with the mean of the means that are present
+                stands=np.where(np.isnan(stands),np.mean(ma.masked_array(stands,mask=nans)),stands)  #replace Nan values with the mean of the std's that are present
 
         elif method=='Center':  #mean and standard deviation of centers seperately to serve as features
             preds=predictions[adt:adt+idx.loc[pat],:]   #all predictions of this patient
@@ -215,15 +215,15 @@ def prepare_data(dframe,predictions,padding,normalize,method,certainty):
     y_true=pd.DataFrame(y_true,columns=['Label']) #labels array to DataFrame
     
     if normalize:   #normalization of the feature columns
-        scaler = preprocessing.StandardScaler()
-        feats[feats.columns]=scaler.fit_transform(feats.values)
+        scaler = preprocessing.StandardScaler()   #initialize scaler
+        feats[feats.columns]=scaler.fit_transform(feats.values)   #normalize the feature values
     
     
     return feats,y_true,mx,features_normal,y_cert
 
 def cross_sc(clf,feat,y_true,y_cert,certainty):
     '''Use cross validation to determine mean and standard deviation of the statistics for the given classifier'''
-    n=300   #number of folds to use
+    n=100   #number of folds to use
     ss = ShuffleSplit(n_splits=n,test_size=0.2)   #make a shuffle split generator
     #make lists to store statistics
     F1s=[]
@@ -290,7 +290,7 @@ def classifiers(dframe,predictions,algos,padding,normalize,method,certainty,basi
         if clas=='Decision Tree':
             clf = tree.DecisionTreeClassifier(criterion='entropy',min_samples_leaf=3,max_depth=3,min_samples_split=10,max_features=None)   #initialize the classifier
         elif clas=='Logistic Regression':
-            clf = LogisticRegression(penalty='l2',solver='liblinear',dual=True)    #initialization of the classifier
+            clf = LogisticRegression(penalty='l2',solver='liblinear',dual=False)    #initialization of the classifier
         elif clas=='Naive Bayes':
             clf = GaussianNB()
         elif clas=='SVM':
@@ -320,18 +320,14 @@ def classifiers(dframe,predictions,algos,padding,normalize,method,certainty,basi
         #elif clas=='Gradient Boosting':
             #clf = GradientBoostingClassifier(n_estimators=100, learning_rate=1.0, max_depth=1)
         elif clas=='Voting classifier':
-            clf1=LogisticRegression(penalty='l2',solver='liblinear',dual=True)
+            clf1=LogisticRegression(penalty='l2',solver='liblinear',dual=False)
             clf2=SVC(C=5,gamma='auto',probability=True)
             clf3=tree.DecisionTreeClassifier(criterion='entropy',min_samples_leaf=3,max_depth=3,min_samples_split=10,max_features=None)
             clf = VotingClassifier(estimators=[('lr', clf1), ('svc', clf2), ('dt', clf3)], voting='soft')
-        elif clas=='Optimal Thresholding' and method!='All':
-            optimal,F1,kap,auc,PPV,NPV,sensi,speci=thresholding(dframe,predictions,method,padding)
-            print(optimal)
-            print(features.columns[0:num])
         else:
-            disable=True
+            disable=True   #to avoid the remaining processes if no correct classifiers are given
         
-        if clas=='First Only' or clas=='Averaging' or clas =='Majority Vote' or clas=='Optimal Thresholding':
+        if clas=='First Only' or clas=='Averaging' or clas =='Majority Vote':  #these do not have a standard deviation
             ks=0 
             fs=0
             ast=0
@@ -344,8 +340,6 @@ def classifiers(dframe,predictions,algos,padding,normalize,method,certainty,basi
         elif disable==False and validation==True:
             kap,ks,F1,fs,auc,ast,PPV,Ps,NPV,Ns,sensi,sss,speci,sfs=validation_score(clf,features,y_true,X_val,y_val,y_val_cert,certainty)  
         #add the scores to the list
-        
-            
         if disable==False:
             AUCs.append(auc)
             AUCs_std.append(ast)
@@ -374,6 +368,7 @@ def perform_pca(dframe,predictions,padding,normalize,method,certainty):
     print(ev)   
     print(feat.columns)
     
+    #calculate and print the ratio of eigenvalues
     ratios=np.zeros((len(ev),1))
     for i in range(0,len(ev)):
         ratios[i]=np.sum(ev[0:i+1])/np.sum(ev)
@@ -420,14 +415,9 @@ def make_bar(frame,frame_basic,save,padding,method):
     return
 
 def autolabel(rects,ax,std, xpos='center'):
-    """
-    Attach a text label above each bar in *rects*, displaying its height.
+    """ Attach a text label above each bar, displaying its height."""
 
-    *xpos* indicates which side to place the text w.r.t. the center of
-    the bar. It can be one of the following {'center', 'right', 'left'}.
-    """
-
-    ha = {'center': 'center', 'right': 'left', 'left': 'right'}
+    ha = {'center': 'center', 'right': 'left', 'left': 'right'}  
     offset = {'center': 0, 'right': 1, 'left': -1}
 
     for index,rect in enumerate(rects):
@@ -456,6 +446,7 @@ def data_visual(dframe,predictions,padding,method):
     ax.set_xticklabels(ax.get_xticklabels(),rotation=45,horizontalalignment='right');
     plt.show()
     
+    #show the distribution plost of the means
     if method!='All':
         for i in range(0,num):
             mean=features[features.columns[i]]
@@ -464,87 +455,80 @@ def data_visual(dframe,predictions,padding,method):
             plt.show()
     return
 
-def validation_score(clf,X_train,y_train,X_val,y_val,y_cert_val,certainty):
-    tree_visual=False
-    clf.fit(X_train,y_train)
-    pred=clf.predict(X_val)
-    if type(clf)==sklearn.tree.tree.DecisionTreeClassifier and tree_visual==True:
-            export_graphviz(clf, out_file='tree.dot', feature_names = X_val.columns,class_names = ['Healthy','T2D'],rounded = True, proportion = False, precision = 2, filled = True)
-    if certainty:
-        pred[np.reshape(y_cert_val==1,len(pred))]=1
-        pred[np.reshape(y_cert_val==0,len(pred))]=0
-    assert clf.classes_[1]==1   #ensure that the correct predictions are chosen
-    (F1,kap,AUC,PPV,NPV,sensi,speci)=kappa(y_val,pred)
+def validation_score(clf,X_train,y_train,X_val,y_val,y_cert_val,certainty,method,padding):
+    tree_visual=False   #whether to visualize the DT 
+    n=10   #number of models made
+    ss = ShuffleSplit(n_splits=n,test_size=0.2)   #make a shuffle split generator
+    #clear memory for scores
+    F1s=np.zeros((n))
+    AUCs=np.zeros((n))
+    kaps=np.zeros((n))
+    PPVs=np.zeros((n))
+    NPVs=np.zeros((n))
+    sensis=np.zeros((n))
+    specis=np.zeros((n))
+    for i,(train_index, test) in enumerate(ss.split(X_train)):  #go over each fod
+        clf.fit(X_train.iloc[train_index],y_train.iloc[train_index])   #train on 80% of the training dataset
+        pred=clf.predict(X_val)  #predict on the entire validation dataset
     
-    return kap['kappa'],0,F1,0,AUC,0,PPV,0,NPV,0,sensi,0,speci,0
+        if certainty:   #correct mistakes of the labels which were certain
+            pred[np.reshape(y_cert_val==1,len(pred))]=1
+            pred[np.reshape(y_cert_val==0,len(pred))]=0
+        assert clf.classes_[1]==1   #ensure that the correct predictions are chosen
+        #calculate the scores and add to the corresponding lists
+        (F1,kap,AUC,PPV,NPV,sensi,speci)=kappa(y_val,pred)
+        F1s[i]=F1
+        AUCs[i]=AUC
+        kaps[i]=kap['kappa']
+        PPVs[i]=PPV
+        NPVs[i]=NPV
+        sensis[i]=sensi
+        specis[i]=speci
+    
+    #if the classifier is a Decision Tree and visualization is enabled, save the DT
+    string=method+'_'+padding+'.dot' #filename of DT
+    if type(clf)==sklearn.tree.tree.DecisionTreeClassifier and tree_visual==True:
+        clf.fit(X_train,y_train)   #fit on the entire training dataset
+        export_graphviz(clf, out_file=string, feature_names = X_val.columns,class_names = ['Healthy','T2D'],rounded = True, proportion = False, precision = 2, filled = True)
+    
+    return np.mean(kaps),np.std(kaps),np.mean(F1s),np.std(F1s),np.mean(AUCs),np.std(AUCs),np.mean(PPVs),np.std(PPVs),np.mean(NPVs),np.std(NPVs),np.mean(sensis),np.std(sensis),np.mean(specis),np.std(specis)
 
 class path():
+    '''contains the paths the the data'''
     training_pred='train_prediction_30.npy'
     training_excel='labels_trainingset.xlsx'
     validation_pred='val_prediction_30.npy'
     validation_excel='labels_validationset.xlsx'
     
-def thresholding(dframe,predictions,method,padding):
-    
-    features,y_true,num,_,_=prepare_data(dframe,predictions,padding,False,method,False)   #acquire the features and labels
-    features=features[features.columns[0:num]]
-    
-    #Optimal Thresholding
-    thresholds=np.linspace(0,1,1000)
-    y_score=np.zeros((len(thresholds),num))
-    for i,feat in enumerate(features.columns):
-        for idx,thres in enumerate(thresholds):
-            y=binarize(features[feat].values.reshape(-1,1), threshold=thres)
-            _,kap,_,_,_,_,_=kappa(y_true, y)
-            y_score[idx,i]=kap['kappa']
-    
-    p=np.argmax(y_score,axis=0)
-    
-    
-    predictions_val=np.load(path.validation_pred)  #load numpy array
-    dframe_val=pd.read_excel(path.validation_excel)  #load patient data
-    feat_val,y_true,num,_,_=prepare_data(dframe_val,predictions_val,padding,False,method,False)
-    feat_val=feat_val[feat_val.columns[0:num]]
-    
-    pred=np.zeros((len(y_true)))
-    optimal=np.zeros((num))
-    for idx,thr in enumerate(p):
-        optimal[idx]=thresholds[thr]
-        pred=pred+binarize(feat_val[feat_val.columns[idx]].values.reshape(-1,1), threshold=thresholds[thr])
-    pred_val=(pred>0).astype(int)
-    (F1,kap,AUC,PPV,NPV,sensi,speci)=kappa(y_true, pred_val)
-    
-    return optimal,F1,kap['kappa'],AUC,PPV,NPV,sensi,speci
-
-
 save_bar=False   #option to save bar plots    options: True or False
 normalize=True   #option to normalize features    options: True or False
-method='All'  #method to use for data pre-processing    options: 'All' or 'Eyes' or 'Center' or 'Both'
-padding='Average'  #Padding method   options: 'Zero' or 'Average'
+method='Both'  #method to use for data pre-processing    options: 'All' or 'Eyes' or 'Center' or 'Both'
+padding='Zero'  #Padding method   options: 'Zero' or 'Average'
 certainty=True    #options: True or False
-visual=False
-Only_kappa=True
-validation=True
+visual=False   #visualze data distributions
+Only_kappa=True   #Only show Kappa Score if set to True
+validation=True   #Use the validation dataset or not
 
 
 predictions=np.load(path.training_pred)  #load numpy array
 dframe=pd.read_excel(path.training_excel)  #load patient data
 if visual:
     data_visual(dframe,predictions,padding,method)
-#classi=['Voting classifier']
-classi=['First Only','Averaging','Majority Vote','Decision Tree','Logistic Regression','Naive Bayes','SVM','Nearest Neighbour','AdaBoost','Voting classifier','Optimal Thresholding']
+classi=['First Only','Averaging','Majority Vote','Decision Tree','Logistic Regression','Naive Bayes','SVM','Nearest Neighbour','AdaBoost','Voting classifier']
+#Classification process with patient information
 AUC,Ast,F1,F1st,Kap,Kst,PPV,Ps,NPV,Ns,sensi,Sstd,speci,spst,classif=classifiers(dframe,predictions,classi,padding,normalize,method,certainty,False,validation)
 if Only_kappa:
     results_fr=display_results(classif,Kappa_score=Kap,Kappa_std=Kst)   
 else:
     results_fr=display_results(classif,F1_score=F1,F1_std=F1st,Kappa_score=Kap,Kappa_std=Kst,AUC_score=AUC,AUC_std=Ast,PPV_score=PPV,PPV_std=Ps,NPV_score=NPV,NPV_std=Ns,sensitivity_score=sensi,sensitivity_std=Sstd,specificity_score=speci,specificity_std=spst)
 
+#Classification process without patient information
 AUC,Ast,F1,F1st,Kap,Kst,PPV,Ps,NPV,Ns,sensi,Sstd,speci,spst,classif=classifiers(dframe,predictions,classi,padding,normalize,method,certainty,True,validation)
 if Only_kappa:
     results_basic=display_results(classif,Kappa_score=Kap,Kappa_std=Kst)   
 else:
     results_basic=display_results(classif,F1_score=F1,F1_std=F1st,Kappa_score=Kap,Kappa_std=Kst,AUC_score=AUC,AUC_std=Ast,PPV_score=PPV,PPV_std=Ps,NPV_score=NPV,NPV_std=Ns,sensitivity_score=sensi,sensitivity_std=Sstd,specificity_score=speci,specificity_std=spst)
-if len(results_fr)>0:
+if len(results_fr)>0:  #if any selected classifiers have been used, display results
     make_bar(results_fr,results_basic,save_bar,padding,method)
 else:
     print('Please select a classifier programmed in this code')
